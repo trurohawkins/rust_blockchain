@@ -2,7 +2,7 @@ mod server;
 mod client;
 mod rsa;
 mod block;
-mod input;
+mod mes;
 
 use std::{io::{Write}, env, thread, sync::mpsc, net::{TcpStream}};
 
@@ -37,7 +37,7 @@ fn main() {//  -> io::Result<()> {
 		server::server(server_tx, streams_tx)
 	});
 	let _ = thread::spawn(move || {
-		input::input(inp_tx)
+		mes::input(inp_tx, Vec::new())
 	});
 
 	if args.len() > 1 {
@@ -63,7 +63,7 @@ fn main() {//  -> io::Result<()> {
 				//println!("got input, now I gotta send {}, is the client running? {}", inp, client_running);
 				if let Some(ref mut s) = client_stream {
 					//println!("we got a client stream {:#?}", s);
-					let _ = s.write(inp.as_bytes());
+					let _ = s.write(&inp.as_bytes()[..]);
 				}
 				/*
 				if client_stream {
@@ -84,9 +84,13 @@ fn main() {//  -> io::Result<()> {
 		}
 		match server_rx.try_recv() {
 			Ok(r) => {
-				println!("got {}", r);
+				 let s = match std::str::from_utf8(&r.mes[..]) {
+        		Ok(v) => v,
+        		Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+    			};
+					println!("got {}", s);
 					for mut s in &stream_vec {
-						let _ = s.write(r.as_bytes());
+						let _ = s.write(&r.as_bytes()[..]);
 					}
 					/*
 					unsafe {

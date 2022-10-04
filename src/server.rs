@@ -1,6 +1,7 @@
 use std::io;
 use std::{io::{Read}, time, net::{TcpListener, TcpStream}, thread,
 					sync::mpsc};
+use crate::mes::Message;
 
 unsafe fn _any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     ::std::slice::from_raw_parts(
@@ -13,7 +14,7 @@ unsafe fn _any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 //Handle access stream
 // create a struct to hold the stream's state
 //perform I/O operations
-fn handle_sender(mut stream: TcpStream, tx: mpsc::Sender<String>) -> io::Result<()> {
+fn handle_sender(mut stream: TcpStream, tx: mpsc::Sender<Message>) -> io::Result<()> {
 	//Handle multiple access stream
 	let mut buf = [0;512];
 	for _ in 0..1000{
@@ -29,8 +30,9 @@ fn handle_sender(mut stream: TcpStream, tx: mpsc::Sender<String>) -> io::Result<
 			Ok(v) => v,
 			Err(e) => panic!("Invalid UTF-8 sequence: {}", e)
 		};
-			//	let s: String = &buf[..bytes_read];
-		let _ = tx.send(s.to_string());
+		let m: Message = Message::new(Vec::new(), s.to_string().as_bytes().to_vec());
+
+		let _ = tx.send(m);
 		//stream.write(b"poo\n");//&buf[..bytes_read])?;
 		// Print accceptance message
 		// read, print the message sent
@@ -42,7 +44,7 @@ fn handle_sender(mut stream: TcpStream, tx: mpsc::Sender<String>) -> io::Result<
 	Ok(())
 }
 
-pub fn server(tx: mpsc::Sender<String>, s_tx: mpsc::Sender<TcpStream>)  -> io::Result<()> {
+pub fn server(tx: mpsc::Sender<Message>, s_tx: mpsc::Sender<TcpStream>)  -> io::Result<()> {
 	//Enable port 7878 binding
 	let receiver_listener = TcpListener::bind("127.0.0.1:7878").expect("Failed and bind with the sender");
 	//receiver_listener.set_nonblocking(true).expect("Cannot set non-blocking");
