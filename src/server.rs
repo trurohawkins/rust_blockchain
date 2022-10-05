@@ -1,14 +1,7 @@
 use std::io;
 use std::{io::{Read}, time, net::{TcpListener, TcpStream}, thread,
 					sync::mpsc};
-use crate::mes::Message;
-
-unsafe fn _any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
-    ::std::slice::from_raw_parts(
-        (p as *const T) as *const u8,
-        ::std::mem::size_of::<T>(),
-    )
-}
+use crate::mes::{self, Message};
 //static mut S_VEC: Vec<TcpStream> = Vec::new();
 
 //Handle access stream
@@ -26,12 +19,14 @@ fn handle_sender(mut stream: TcpStream, tx: mpsc::Sender<Message>) -> io::Result
 			println!("ppopy");
 			return Ok(());
 		}
+		let m: Message = mes::mes_from_bytes(&buf[..bytes_read]);
+		/*
 		let s = match std::str::from_utf8(&buf[..bytes_read]) {
 			Ok(v) => v,
 			Err(e) => panic!("Invalid UTF-8 sequence: {}", e)
 		};
 		let m: Message = Message::new(Vec::new(), s.to_string().as_bytes().to_vec());
-
+		*/
 		let _ = tx.send(m);
 		//stream.write(b"poo\n");//&buf[..bytes_read])?;
 		// Print accceptance message
@@ -44,7 +39,7 @@ fn handle_sender(mut stream: TcpStream, tx: mpsc::Sender<Message>) -> io::Result
 	Ok(())
 }
 
-pub fn server(tx: mpsc::Sender<Message>, s_tx: mpsc::Sender<TcpStream>)  -> io::Result<()> {
+pub fn server(tx: mpsc::Sender<Message>, s_tx: mpsc::Sender<TcpStream>) -> io::Result<()> {
 	//Enable port 7878 binding
 	let receiver_listener = TcpListener::bind("127.0.0.1:7878").expect("Failed and bind with the sender");
 	//receiver_listener.set_nonblocking(true).expect("Cannot set non-blocking");
@@ -73,19 +68,10 @@ pub fn server(tx: mpsc::Sender<Message>, s_tx: mpsc::Sender<TcpStream>)  -> io::
 			},
 			Err(e) => {
 				println!("error with connection {}", e);
+				return Ok(());
 			}
 		}
 	}
-	
-	//println!("length : {}", stream_vec.len());
-	/*
-	for mut s in stream_vec {
-		s.write(b"poo\n");
-		thread::sleep(time::Duration::from_secs(1));
-
-	}
-	*/
-	
 
 	for handle in thread_vec {
 		// return each single value Output contained in the heap
@@ -95,7 +81,15 @@ pub fn server(tx: mpsc::Sender<Message>, s_tx: mpsc::Sender<TcpStream>)  -> io::
 // success value
 	Ok(())
 }
-		/*
+
+unsafe fn _any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
+    ::std::slice::from_raw_parts(
+        (p as *const T) as *const u8,
+        ::std::mem::size_of::<T>(),
+    )
+}
+
+/*
 				unsafe {
 					//let addr = stream.addr;
 					let slice = any_as_u8_slice(&stream);

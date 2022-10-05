@@ -30,33 +30,49 @@ fn main() {//  -> io::Result<()> {
 	let (server_tx, server_rx) = mpsc::channel();
 	let (streams_tx, streams_rx) = mpsc::channel();
 	let (inp_tx, inp_rx) = mpsc::channel();
-	let mut stream_vec: Vec<TcpStream> = Vec::new();
 	let mut client_stream: Option<TcpStream> = None;
+	let mut threads: Vec<thread::JoinHandle<()>> = Vec::new();
 	
-	let _handle = thread::spawn(move || {
-		server::server(server_tx, streams_tx)
+	let hand = thread::spawn(move || {
+		server::server(server_tx, streams_tx);
 	});
-	let _ = thread::spawn(move || {
-		mes::input(inp_tx, Vec::new())
-	});
-
+	threads.push(hand);
+	let mut connections: Vec<client::ClientConnection> = Vec::new();
+	let mut my_ip: Vec<u8> = Vec::new();
 	if args.len() > 1 {
 			let mut ip = args[1].clone();
 			ip.push_str(":7878");
 			match TcpStream::connect(ip) {//.expect("couldnt connect to server");
 				Ok(stream) => {
 					match stream.try_clone() {
-						Ok(s) => {client_stream = Some(s);},
+						Ok(s) => {
+						match s.local_addr() {
+							Ok(a) => {
+								let ip: String = a.ip().to_string();
+								let port: String = a.port().to_string();
+								my_ip = ip_to_vec(ip, port);
+							},
+							Err(_) => {}
+						}
+							//my_ip = ip_to_vec(s.clone());	
+							client_stream = Some(s);
+						},
 						Err(e) => {println!("cant clone client stream {}", e);}
 					}
-					let _handle = thread::spawn(move || {
+
+					let handle = thread::spawn(move || {
 						client::client(stream);
 					});
+					threads.push(handle);
 				},
 				Err(e) => {println!("cannot connect {}", e);}
 			}
 			//let mut stream = TcpStream::connect(ip).expect("couldnt connect to server");
 	}
+	let handle = thread::spawn(move || {
+			mes::input(inp_tx, user1.public, my_ip)
+	});
+	threads.push(handle);
 	loop {
 		match inp_rx.try_recv() {
 			Ok(inp) => {
@@ -75,7 +91,8 @@ fn main() {//  -> io::Result<()> {
 		}
 		match streams_rx.try_recv() {
 			Ok(s) => {
-				stream_vec.push(s);
+				//stream_vec.push(s);
+				connections.push(client::ClientConnection::new(s));
 			},
 			//mpsc::TryRecvError::Empty => {},
 			Err(_) => {
@@ -84,26 +101,105 @@ fn main() {//  -> io::Result<()> {
 		}
 		match server_rx.try_recv() {
 			Ok(r) => {
-				 let s = match std::str::from_utf8(&r.mes[..]) {
-        		Ok(v) => v,
-        		Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-    			};
-					println!("got {}", s);
-					for mut s in &stream_vec {
-						let _ = s.write(&r.as_bytes()[..]);
+				let from = r.ip.clone();//user_key.clone();
+				for mut c in &mut connections {
+					match c.stream.peer_addr() {
+						Ok(a) => {
+							let ip: String = a.ip().to_string();
+							let port: String = a.port().to_string();
+							let cur = ip_to_vec(ip, port);
+							if cur != from {
+								let _ = c.stream.write(&r.as_bytes()[..]);
+							} else {
+							}
+						},
+						Err(e) => {println!("we got an error{}", e);}
 					}
-					/*
-					unsafe {
-						println!("{}", server::S_VEC.len());
-						for s in server::S_VEC.iter_mut() {
-							s.write(r.as_bytes());
-						}
-					}
-					*/
+					
+				}
+				let s = match std::str::from_utf8(&r.mes[..]) {
+        	Ok(v) => v,
+        	Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+    		};
+				println!("got {}", s);
 			},
 			Err(_) => {
 				//println!("broadcast receive error {}", e);
 			}
 		}
+		let mut to_remove = Vec::new();
+		//println!("thread size: {}", threads.len());
+		for mut i in 0..threads.len() {
+			if threads[i].is_finished() {
+				to_remove.push(i);
+			}
+		}
+		for i in &to_remove {
+			let t = threads.remove(*i);
+			match t.join() {//.unwrap();
+				Ok(p) => {
+					println!("handle {:?}, \nnew size: {}", p, threads.len());
+				},
+				Err(e) => {
+					println!("error from thread closure {:#?}", e);
+				}
+			}
+		}
+		if threads.len() == 1 {
+			println!("breaking loop");
+			break;
+		}
+		/*
+		for handle in thread_vec {
+			// return each single value Output contained in the heap
+			if handle.is_finished() {
+			}
+		}
+		*/
 	}
 }
+
+fn ip_to_vec(ip: String, port: String) -> Vec<u8> {
+	let mut nums: Vec<u8> = Vec::new();
+	/*
+	match stream.peer_addr() {
+		Ok(a) => {
+			let s: String = a.ip().to_string();
+		*/
+			let mut strings: Vec<String> = Vec::new();
+			let mut cur: Vec<char> = Vec::new();
+			for c in ip.chars() {
+				if c.is_digit(10) {
+					cur.push(c);
+				} else {
+					strings.push(cur.iter().cloned().collect::<String>());
+					cur = Vec::new();
+				}
+			}
+			strings.push(cur.iter().cloned().collect::<String>());
+			cur = Vec::new();
+			let mut i = 0;
+			for c in port.chars() {
+				if c.is_digit(10) {
+					cur.push(c);
+					strings.push(cur.iter().cloned().collect::<String>());
+					cur = Vec::new();
+				}
+				i += 1;
+			}
+			strings.push(cur.iter().cloned().collect::<String>());
+
+			for n in strings {
+				match n.parse::<u8>() {
+					Ok(int) => {
+						nums.push(int);
+					},
+					Err(_) => {}
+				}
+			}
+	/*	},
+		Err(e) => {println!("error getting ip {}", e);}
+	//} */
+	nums
+}
+

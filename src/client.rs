@@ -1,6 +1,33 @@
-use std::{net::TcpStream, io::{prelude::*,BufReader}};
+use std::{net::TcpStream, io::{self, prelude::*,BufReader}};
+use crate::mes::{self, Message};
 
-pub fn client(stream: TcpStream) { //-> io::Result<( )> {
+pub struct ClientConnection {
+	pub stream: TcpStream,
+	pub user: Vec<u8>
+}
+
+impl ClientConnection {
+	pub fn new(stream: TcpStream) -> Self {
+		let user: Vec<u8> = Vec::new();
+		Self {stream, user}
+	}
+
+	pub fn add_user(&mut self, u: Vec<u8>) {
+		for b in u {
+			self.user.push(b);
+		}
+	}
+
+	pub fn check_user(&self) -> bool {
+		if self.user.len() == 0 {
+			false
+		} else {
+			true
+		}
+	}
+}
+
+pub fn client(stream: TcpStream) -> io::Result<( )> {
 	//connect
 	//Struct used to start requests to the server
 	// Check TcpStream Connection to the server
@@ -17,9 +44,27 @@ pub fn client(stream: TcpStream) { //-> io::Result<( )> {
 		// add buffering so that the receiver can read messages from the stream
 		let mut reader = BufReader::new(&stream);
 		// Check if this input message vales are u8
-		let mut buffer: Vec<u8> = Vec::new();
+		//let mut buffer: Vec<u8> = Vec::new();
+		let mut buf = [0;512];
 		// Read the input information
-		let _ = reader.read_until(b'\n', &mut buffer);
+		match reader.read(&mut buf) {//_to_end(&mut buffer);
+			Ok(bytes_read) => {
+			if bytes_read == 0 {
+				println!("ohnoohno zerooo bytes, server is probably gone, I will disconnect now");
+				break;
+			}
+
+			let m: Message = mes::mes_from_bytes(&buf);
+			let s = match std::str::from_utf8(&m.mes[..]) {
+				Ok(v) => v,
+				Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+			};
+			m.read();
+			},
+			Err(e) => {
+				println!("client error, reading from stream {}", e);
+			}
+		}
 		/*
 		match stream.read_to_end(&mut buf) {
 			Ok(_) => {
@@ -35,5 +80,5 @@ pub fn client(stream: TcpStream) { //-> io::Result<( )> {
 		*/
 	//}
 	}
-	//Ok(())
+	Ok(())
 }
