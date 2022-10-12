@@ -2,8 +2,9 @@ use serde::{Serialize, Deserialize};
 use log::{warn, error};
 use chrono::prelude::*;//{Duration, Utc};
 use sha2::{Digest, Sha256};
+use crate::{rsa};
 
-const DIFFICULTY_PREFIX: &str = "00";
+const DIFFICULTY_PREFIX: &str = "0";
 
 fn hash_to_binary_representation(hash: &[u8]) -> String {
 	let mut res: String = String::default();
@@ -46,7 +47,7 @@ impl<T: Serialize> Block<T> {
 	}
 }
 
-
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Chain<T: Serialize> {
 	pub blocks: Vec<Block<T>>
 }
@@ -68,12 +69,14 @@ impl<T: Serialize> Chain<T> {
 		self.blocks.push(genesis_block);
 	}
 
-	pub fn try_add_block(&mut self, block: Block<T>) {
+	pub fn try_add_block(&mut self, block: Block<T>) -> bool {
 		let latest_block = self.blocks.last().expect("theereis at least one block");
 		if self.is_block_valid(&block, latest_block) {
 			self.blocks.push(block);
+			true
 		} else {
 			error!("could not add block - invalid");
+			false
 		}
 	}
 
@@ -121,7 +124,7 @@ impl<T: Serialize> Chain<T> {
 	}
 
 	// We always choose the longest chain
-	fn choose_chain(&mut self, local: Vec<Block<T>>, remote: Vec<Block<T>>) -> Vec<Block<T>> {
+	pub fn choose_chain(&mut self, local: Vec<Block<T>>, remote: Vec<Block<T>>) -> Vec<Block<T>> {
 		let is_local_valid = self.is_chain_valid(&local);
 		let is_remote_valid = self.is_chain_valid(&remote);
 
@@ -164,3 +167,18 @@ pub fn mine_block<T: Serialize + Copy>(id: u64, timestamp: i64, previous_hash: &
 	}
 }
 
+pub fn print_transaction_block(b: &Block<Vec<rsa::Transaction>>) {
+	println!("BLOCK # {}", b.id);
+	println!("hash: {}", b.hash);
+	println!("nonce: {}", b.nonce);
+	println!("pre: {}", b.previous_hash);
+	println!("at {}", b.timestamp);
+	for t in &b.data {
+		rsa::print_transaction(&t);
+	}
+}
+pub fn chain_print_transactions(chain: &Chain<Vec<rsa::Transaction>>) {
+	for b in &chain.blocks {
+		print_transaction_block(&b);
+	}
+}

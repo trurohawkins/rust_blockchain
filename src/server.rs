@@ -9,7 +9,7 @@ use crate::mes::{self, Message};
 //perform I/O operations
 fn handle_sender(mut stream: TcpStream, tx: mpsc::Sender<Message>) -> io::Result<()> {
 	//Handle multiple access stream
-	let mut buf = [0;512];
+	let mut buf = [0;4096];
 	for _ in 0..1000{
 		//tx.send("poo\n".to_string());
 		// let the receiever get a message from a sender
@@ -20,6 +20,7 @@ fn handle_sender(mut stream: TcpStream, tx: mpsc::Sender<Message>) -> io::Result
 			return Ok(());
 		}
 		let m: Message = mes::mes_from_bytes(&buf[..bytes_read]);
+		//m.clone().print();
 		/*
 		let s = match std::str::from_utf8(&buf[..bytes_read]) {
 			Ok(v) => v,
@@ -41,42 +42,48 @@ fn handle_sender(mut stream: TcpStream, tx: mpsc::Sender<Message>) -> io::Result
 
 pub fn server(tx: mpsc::Sender<Message>, s_tx: mpsc::Sender<TcpStream>) -> io::Result<()> {
 	//Enable port 7878 binding
-	let receiver_listener = TcpListener::bind("127.0.0.1:7878").expect("Failed and bind with the sender");
-	//receiver_listener.set_nonblocking(true).expect("Cannot set non-blocking");
-	// Getting a handle of the underlying thread
-	let mut thread_vec: Vec<thread::JoinHandle<()>> = Vec::new();
-	println!("Server started, waiting for connections...");
-	// listen to incoming connections messages and bind them to a server socket address
-	for stream in receiver_listener.incoming() {
-		match stream {
-			Ok(stream) => {
-				match stream.try_clone() {
+	//let receiver_listener = TcpListener::bind("127.0.0.1:7878").expect("Failed and bind with the sender");
+	match TcpListener::bind("127.0.0.1:7878") {
+		Ok(receiver_listener) => {
+			//receiver_listener.set_nonblocking(true).expect("Cannot set non-blocking");
+			// Getting a handle of the underlying thread
+			let mut thread_vec: Vec<thread::JoinHandle<()>> = Vec::new();
+			println!("Server started, waiting for connections...");
+			// listen to incoming connections messages and bind them to a server socket address
+			for stream in receiver_listener.incoming() {
+				match stream {
 					Ok(stream) => {
-						let tx = tx.clone();
-						let handle = thread::spawn(move || {
-							handle_sender(stream, tx).unwrap_or_else(|error| eprintln!("{:?}", error))
-						});
-						thread_vec.push(handle);
+						match stream.try_clone() {
+							Ok(stream) => {
+								let tx = tx.clone();
+								let handle = thread::spawn(move || {
+									handle_sender(stream, tx).unwrap_or_else(|error| eprintln!("{:?}", error))
+								});
+								thread_vec.push(handle);
+							},
+							Err(e) => {
+								println!("couldnt clone stream {}", e);
+							}
+						}
+						println!("New connection!\n{:#?}", stream);
+						let _ = s_tx.send(stream);
 					},
 					Err(e) => {
-						println!("couldnt clone stream {}", e);
+						println!("error with connection {}", e);
+						return Ok(());
 					}
 				}
-				println!("New connection!\n{:#?}", stream);
-				let _ = s_tx.send(stream);
-			
-			},
-			Err(e) => {
-				println!("error with connection {}", e);
-				return Ok(());
 			}
-		}
-	}
 
-	for handle in thread_vec {
-		// return each single value Output contained in the heap
-		let p = handle.join().unwrap();
-		println!("handle {:?}", p);
+			for handle in thread_vec {
+				// return each single value Output contained in the heap
+				let p = handle.join().unwrap();
+				println!("handle {:?}", p);
+			}
+		},
+		Err(e) => {
+			println!("couldnt start server -- {}", e);
+		}
 	}
 // success value
 	Ok(())

@@ -3,17 +3,33 @@ mod client;
 mod rsa;
 mod block;
 mod mes;
+mod contact;
 
-use std::{io::{Write}, env, thread, sync::mpsc, net::{TcpStream}};
+use std::{io::{Write}, time, env, thread, sync::mpsc, net::{TcpStream}};
 
 fn main() {//  -> io::Result<()> {
-	let passphrase = "poop";
+	let mut c_book = contact::ContactBook::new();
+	let mut blockchain: block::Chain<Vec<rsa::Transaction>> = block::Chain::new();
+	blockchain.genesis(Vec::new());
+	/*
+	let passphrase = "!Poop";
 	let user1 = rsa::User::new(passphrase);
+	user1.save();
+	user1.print();
+	thread::sleep(time::Duration::from_secs(1));
+	let c = contact::Contact::new(&user1);
+	c_book.add_contact(c.clone());
+	*/
+	/*
+	let c2 = rsa::bytes_to_Contact(c.as_bytes());
+	println!("");
+	c.print();
+	println!("\n~~~~~~\n");
+	c2.print();
+	println!("");
 	let user2 = rsa::User::new(passphrase);
 	let trans = rsa::Transaction::new(user1.public.clone(), user2.public.clone(), 0.0);
-
-	let mut blockchain = block::Chain::new();
-	blockchain.genesis(trans);
+	*/
 	/*
 	let th = rsa::sign_transaction(user1.clone(), user2.public.clone(), 0.0);
 	let t = rsa::verify_transaction(user1.public, th.clone());
@@ -28,6 +44,7 @@ fn main() {//  -> io::Result<()> {
 	}
 	let args: Vec<String> = env::args().collect();
 	let (server_tx, server_rx) = mpsc::channel();
+	let (client_tx, client_rx) = mpsc::channel();
 	let (streams_tx, streams_rx) = mpsc::channel();
 	let (inp_tx, inp_rx) = mpsc::channel();
 	let mut client_stream: Option<TcpStream> = None;
@@ -37,6 +54,7 @@ fn main() {//  -> io::Result<()> {
 		server::server(server_tx, streams_tx);
 	});
 	threads.push(hand);
+	thread::sleep(time::Duration::from_secs(1));
 	let mut connections: Vec<client::ClientConnection> = Vec::new();
 	let mut my_ip: Vec<u8> = Vec::new();
 	if args.len() > 1 {
@@ -61,7 +79,7 @@ fn main() {//  -> io::Result<()> {
 					}
 
 					let handle = thread::spawn(move || {
-						client::client(stream);
+						client::client(stream, client_tx);
 					});
 					threads.push(handle);
 				},
@@ -69,23 +87,31 @@ fn main() {//  -> io::Result<()> {
 			}
 			//let mut stream = TcpStream::connect(ip).expect("couldnt connect to server");
 	}
+
 	let handle = thread::spawn(move || {
-			mes::input(inp_tx, user1.public, my_ip)
+			mes::input(inp_tx)
 	});
 	threads.push(handle);
+
+	let mut closing_time = false;
 	loop {
 		match inp_rx.try_recv() {
 			Ok(inp) => {
-				//println!("got input, now I gotta send {}, is the client running? {}", inp, client_running);
-				if let Some(ref mut s) = client_stream {
+				let letter: u8 = inp.chars().next().unwrap() as u8;
+				if letter == 27 {
+				//if inp.len() == 0 {// && inp.ip.len() == 0 {
+					println!("received empty message");
+					closing_time = true;
+				} else if let Some(ref mut s) = client_stream {
 					//println!("we got a client stream {:#?}", s);
-					let _ = s.write(&inp.as_bytes()[..]);
+					let m = c_book.parse_command(inp, my_ip.clone(), &mut blockchain);
+					match m {
+						Some(message) => {
+							let _ = s.write(&message.as_bytes()[..]);
+						},
+						None => {},
+					}
 				}
-				/*
-				if client_stream {
-					client_stream.write(inp.as_bytes()).expect("failed to write");
-				}
-				*/
 			},
 			Err(_) => {}
 		}
@@ -102,34 +128,63 @@ fn main() {//  -> io::Result<()> {
 		match server_rx.try_recv() {
 			Ok(r) => {
 				let from = r.ip.clone();//user_key.clone();
-				for mut c in &mut connections {
+				//for c in &mut connections {
+				let mut i =0;
+				'con: while i < connections.len() {
+					let c = &mut connections[i];
 					match c.stream.peer_addr() {
 						Ok(a) => {
 							let ip: String = a.ip().to_string();
 							let port: String = a.port().to_string();
 							let cur = ip_to_vec(ip, port);
 							if cur != from {
-								let _ = c.stream.write(&r.as_bytes()[..]);
+								let _ = c.stream.write(&r.clone().as_bytes()[..]);
 							} else {
 							}
 						},
-						Err(e) => {println!("we got an error{}", e);}
+						Err(e) => {
+							println!("we got an error{}", e);
+							// remove from list
+							connections.remove(i);
+							continue 'con;
+						}
 					}
-					
+					i += 1;
 				}
+				/*
 				let s = match std::str::from_utf8(&r.mes[..]) {
         	Ok(v) => v,
         	Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
     		};
 				println!("got {}", s);
+				*/
 			},
 			Err(_) => {
 				//println!("broadcast receive error {}", e);
 			}
 		}
+		match client_rx.try_recv() {
+			Ok(m) => {
+				let mut reply = c_book.parse_message(m, my_ip.clone(), &mut blockchain);
+				if let Some(ref mut r) = reply {
+					if let Some(ref mut s) = client_stream {
+						let _ = s.write(&r.as_bytes()[..]);
+					}
+				}
+
+				/*
+				m.parse();
+				c_book.add_contact(m.user);
+				c_book.print();
+				*/
+			},
+			Err(_) => {
+				//println!("receive from client thread error");
+			}
+		}
 		let mut to_remove = Vec::new();
 		//println!("thread size: {}", threads.len());
-		for mut i in 0..threads.len() {
+		for i in 0..threads.len() {
 			if threads[i].is_finished() {
 				to_remove.push(i);
 			}
@@ -145,7 +200,7 @@ fn main() {//  -> io::Result<()> {
 				}
 			}
 		}
-		if threads.len() == 1 {
+		if closing_time || threads.len() == 1 {
 			println!("breaking loop");
 			break;
 		}
@@ -178,14 +233,12 @@ fn ip_to_vec(ip: String, port: String) -> Vec<u8> {
 			}
 			strings.push(cur.iter().cloned().collect::<String>());
 			cur = Vec::new();
-			let mut i = 0;
 			for c in port.chars() {
 				if c.is_digit(10) {
 					cur.push(c);
 					strings.push(cur.iter().cloned().collect::<String>());
 					cur = Vec::new();
 				}
-				i += 1;
 			}
 			strings.push(cur.iter().cloned().collect::<String>());
 

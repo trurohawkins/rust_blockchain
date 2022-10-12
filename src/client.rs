@@ -1,5 +1,5 @@
-use std::{net::TcpStream, io::{self, prelude::*,BufReader}};
-use crate::mes::{self, Message};
+use std::{net::TcpStream, io::{self, prelude::*,BufReader}, sync::mpsc};
+use crate::{mes::{self, Message}};
 
 pub struct ClientConnection {
 	pub stream: TcpStream,
@@ -11,7 +11,7 @@ impl ClientConnection {
 		let user: Vec<u8> = Vec::new();
 		Self {stream, user}
 	}
-
+/*
 	pub fn add_user(&mut self, u: Vec<u8>) {
 		for b in u {
 			self.user.push(b);
@@ -25,9 +25,10 @@ impl ClientConnection {
 			true
 		}
 	}
+*/
 }
 
-pub fn client(stream: TcpStream) -> io::Result<( )> {
+pub fn client(stream: TcpStream, c_tx: mpsc::Sender<Message>) -> io::Result<( )> {
 	//connect
 	//Struct used to start requests to the server
 	// Check TcpStream Connection to the server
@@ -45,21 +46,30 @@ pub fn client(stream: TcpStream) -> io::Result<( )> {
 		let mut reader = BufReader::new(&stream);
 		// Check if this input message vales are u8
 		//let mut buffer: Vec<u8> = Vec::new();
-		let mut buf = [0;512];
+		let mut buf = [0;4096];
 		// Read the input information
 		match reader.read(&mut buf) {//_to_end(&mut buffer);
 			Ok(bytes_read) => {
-			if bytes_read == 0 {
-				println!("ohnoohno zerooo bytes, server is probably gone, I will disconnect now");
-				break;
-			}
+				if bytes_read == 0 {
+					println!("ohnoohno zerooo bytes, server is probably gone, I will disconnect now");
+					break;
+				}
 
-			let m: Message = mes::mes_from_bytes(&buf);
-			let s = match std::str::from_utf8(&m.mes[..]) {
-				Ok(v) => v,
-				Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-			};
-			m.read();
+				let m: Message = mes::mes_from_bytes(&buf);
+				match c_tx.send(m) {
+					Ok(_) => {},
+					Err(e) => {panic!("error sending broadcast from client thread {}", e);}
+				}
+				/*
+				let s = match std::str::from_utf8(&m.mes[..]) {
+					Ok(v) => v,
+					Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+				};
+				*/
+				//let c = m.clone().user;
+				//book.add_contact(c);
+				//book.print();
+				//m.read();
 			},
 			Err(e) => {
 				println!("client error, reading from stream {}", e);
