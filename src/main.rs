@@ -6,11 +6,11 @@ mod mes;
 mod contact;
 
 use std::{io::{Write}, time, env, thread, sync::mpsc, net::{TcpStream}};
+use crate::{mes::{Message}};
 
 fn main() {//  -> io::Result<()> {
 	let mut c_book = contact::ContactBook::new();
-	let mut blockchain: block::Chain<Vec<rsa::Transaction>> = block::Chain::new();
-	blockchain.genesis(Vec::new());
+	let mut blockchain: block::Chain = block::Chain::new();
 	/*
 	let passphrase = "!Poop";
 	let user1 = rsa::User::new(passphrase);
@@ -51,7 +51,10 @@ fn main() {//  -> io::Result<()> {
 	let mut threads: Vec<thread::JoinHandle<()>> = Vec::new();
 	
 	let hand = thread::spawn(move || {
-		server::server(server_tx, streams_tx);
+		match server::server(server_tx, streams_tx) {
+			Ok(_) => {},
+			Err(_) => {}
+		}
 	});
 	threads.push(hand);
 	thread::sleep(time::Duration::from_secs(1));
@@ -79,13 +82,20 @@ fn main() {//  -> io::Result<()> {
 					}
 
 					let handle = thread::spawn(move || {
-						client::client(stream, client_tx);
+						match client::client(stream, client_tx) {
+							Ok(_) => {},
+							Err(_) => {}
+						}
 					});
 					threads.push(handle);
 				},
 				Err(e) => {println!("cannot connect {}", e);}
 			}
 			//let mut stream = TcpStream::connect(ip).expect("couldnt connect to server");
+	} else {
+		let ip = "0.0.0.0".to_string();
+		let port = "00000".to_string();
+		my_ip = ip_to_vec(ip, port);
 	}
 
 	let handle = thread::spawn(move || {
@@ -95,35 +105,41 @@ fn main() {//  -> io::Result<()> {
 
 	let mut closing_time = false;
 	loop {
+		match streams_rx.try_recv() {
+			Ok(s) => {
+				//stream_vec.push(s);
+				connections.push(client::ClientConnection::new(s));
+				let chain_length: u64 = blockchain.blocks.len().try_into().unwrap();
+				let m: Message = Message::new(4, c_book.my_contact.clone(), chain_length.to_be_bytes().to_vec(), my_ip.clone());
+				let new_len = connections.len();
+				let _ = connections[new_len-1].stream.write(&m.clone().as_bytes()[..]);
+			},
+			//mpsc::TryRecvError::Empty => {},
+			Err(_) => {
+				//println!("error retrieiving stream {}", e);
+			}
+		}
 		match inp_rx.try_recv() {
 			Ok(inp) => {
 				let letter: u8 = inp.chars().next().unwrap() as u8;
 				if letter == 27 {
-				//if inp.len() == 0 {// && inp.ip.len() == 0 {
-					println!("received empty message");
 					closing_time = true;
-				} else if let Some(ref mut s) = client_stream {
-					//println!("we got a client stream {:#?}", s);
+				} else {
 					let m = c_book.parse_command(inp, my_ip.clone(), &mut blockchain);
 					match m {
 						Some(message) => {
-							let _ = s.write(&message.as_bytes()[..]);
+							if let Some(ref mut s) = client_stream {
+								let _ = s.write(&message.as_bytes()[..]);
+							}
+							for c in &mut connections {
+								let _ = c.stream.write(&message.clone().as_bytes()[..]);
+							}
 						},
 						None => {},
 					}
 				}
 			},
 			Err(_) => {}
-		}
-		match streams_rx.try_recv() {
-			Ok(s) => {
-				//stream_vec.push(s);
-				connections.push(client::ClientConnection::new(s));
-			},
-			//mpsc::TryRecvError::Empty => {},
-			Err(_) => {
-				//println!("error retrieiving stream {}", e);
-			}
 		}
 		match server_rx.try_recv() {
 			Ok(r) => {
@@ -151,13 +167,7 @@ fn main() {//  -> io::Result<()> {
 					}
 					i += 1;
 				}
-				/*
-				let s = match std::str::from_utf8(&r.mes[..]) {
-        	Ok(v) => v,
-        	Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-    		};
-				println!("got {}", s);
-				*/
+				c_book.parse_message(r, my_ip.clone(), &mut blockchain);
 			},
 			Err(_) => {
 				//println!("broadcast receive error {}", e);
@@ -171,12 +181,6 @@ fn main() {//  -> io::Result<()> {
 						let _ = s.write(&r.as_bytes()[..]);
 					}
 				}
-
-				/*
-				m.parse();
-				c_book.add_contact(m.user);
-				c_book.print();
-				*/
 			},
 			Err(_) => {
 				//println!("receive from client thread error");
@@ -192,8 +196,8 @@ fn main() {//  -> io::Result<()> {
 		for i in &to_remove {
 			let t = threads.remove(*i);
 			match t.join() {//.unwrap();
-				Ok(p) => {
-					println!("handle {:?}, \nnew size: {}", p, threads.len());
+				Ok(_) => {
+					//println!("handle {:?}, \nnew size: {}", p, threads.len());
 				},
 				Err(e) => {
 					println!("error from thread closure {:#?}", e);
@@ -201,7 +205,7 @@ fn main() {//  -> io::Result<()> {
 			}
 		}
 		if closing_time || threads.len() == 1 {
-			println!("breaking loop");
+			//println!("breaking loop");
 			break;
 		}
 		/*
@@ -212,6 +216,7 @@ fn main() {//  -> io::Result<()> {
 		}
 		*/
 	}
+	blockchain.save_chain();
 }
 
 fn ip_to_vec(ip: String, port: String) -> Vec<u8> {

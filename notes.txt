@@ -1,0 +1,10 @@
+(-) Server has a queue of messages to send
+	for each connection the server has
+		it send out data and waits for receipt from that data
+	the to next on the queue
+	//this would allow sending several message in a row
+		such as for sending the blockchain (which is too bigend in one chunk
+(-) work offline, make users, mine
+	connect to broadcast blocks and make transactions
+(-) save server nodes
+	attempt to connect to any of known servers

@@ -1,4 +1,5 @@
 use serde::{Serialize, Deserialize};
+use std::fs;
 use log::{warn, error};
 use chrono::prelude::*;//{Duration, Utc};
 use sha2::{Digest, Sha256};
@@ -28,17 +29,17 @@ fn calculate_hash<T: Serialize>(id: u64, timestamp: i64, previous_hash: &str, da
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Block<T: Serialize> {
+pub struct Block {
 	pub id: u64,
 	pub hash: String,
 	pub previous_hash: String,
 	pub timestamp: i64,
-	pub data: T,
+	pub data: Vec<rsa::Transaction>,
 	pub nonce: u64
 }
 
-impl<T: Serialize> Block<T> {
-	pub fn new(id: u64, previous_hash: String, data: T) -> Self {
+impl Block {
+	pub fn new(id: u64, previous_hash: String, data: Vec<rsa::Transaction>) -> Self {
 		let now = Utc::now();
 		let (nonce, hash) = mine_block(id, now.timestamp(), &previous_hash, &data);
 		Self {
@@ -48,16 +49,23 @@ impl<T: Serialize> Block<T> {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Chain<T: Serialize> {
-	pub blocks: Vec<Block<T>>
+pub struct Chain {
+	pub blocks: Vec<Block>
 }
 
-impl<T: Serialize> Chain<T> {
+impl Chain {
 	pub fn new() -> Self {
-		Self { blocks: vec![] }
+		let blocks = load_chain();
+		let mut chain = Chain {
+			blocks: blocks
+		};
+		if chain.blocks.len() == 0 {
+			chain.genesis(Vec::new());
+		}
+		chain
 	}
 
-	pub fn genesis(&mut self, data: T) {
+	pub fn genesis(&mut self, data: Vec<rsa::Transaction>) {
 		let genesis_block = Block {
 			id: 0,
 			timestamp: Utc::now().timestamp(),
@@ -69,7 +77,7 @@ impl<T: Serialize> Chain<T> {
 		self.blocks.push(genesis_block);
 	}
 
-	pub fn try_add_block(&mut self, block: Block<T>) -> bool {
+	pub fn try_add_block(&mut self, block: Block) -> bool {
 		let latest_block = self.blocks.last().expect("theereis at least one block");
 		if self.is_block_valid(&block, latest_block) {
 			self.blocks.push(block);
@@ -80,7 +88,7 @@ impl<T: Serialize> Chain<T> {
 		}
 	}
 
-	fn is_block_valid (&self, block: &Block<T>, previous_block: &Block<T>) -> bool {
+	fn is_block_valid (&self, block: &Block, previous_block: &Block) -> bool {
 		if block.previous_hash != previous_block.hash {
 			warn!("block with id : {} has wrong previous hash", block.id);
 			return false;
@@ -109,7 +117,7 @@ impl<T: Serialize> Chain<T> {
 		true
 	}
 
-	pub fn is_chain_valid(&self, chain: &[Block<T>]) -> bool {
+	pub fn is_chain_valid(&self, chain: &[Block]) -> bool {
 		for i in 0..chain.len() {
 			if i == 0 {
 				continue;
@@ -124,7 +132,7 @@ impl<T: Serialize> Chain<T> {
 	}
 
 	// We always choose the longest chain
-	pub fn choose_chain(&mut self, local: Vec<Block<T>>, remote: Vec<Block<T>>) -> Vec<Block<T>> {
+	pub fn choose_chain(&mut self, local: Vec<Block>, remote: Vec<Block>) -> Vec<Block> {
 		let is_local_valid = self.is_chain_valid(&local);
 		let is_remote_valid = self.is_chain_valid(&remote);
 
@@ -140,6 +148,37 @@ impl<T: Serialize> Chain<T> {
 			local
 		} else {
 			panic!("LOCAL AND REMOTE CHAINS ARE BOTH INVALID!");
+		}
+	}
+
+	pub fn save_chain(&mut self) {
+		/*
+		let mut buffer: Vec<u8> = Vec::new();
+		for b in &self.blocks {
+			let d = bincode::serialize(b).unwrap();
+			for byte in d {
+				buffer.push(byte);
+			}
+		}
+		*/
+		let buffer = bincode::serialize(&self.blocks).unwrap();
+		match fs::write("blockchain.sav", buffer) {
+			Ok(_) => {},
+			Err(e) => {panic!("failed to save blockchain -- {}", e);}
+		}
+	}
+}
+
+pub fn load_chain() -> Vec<Block> {
+	//let  mut  data: 'de;
+	match fs::read("blockchain.sav") {
+		Ok(d) => {
+			let chain = bincode::deserialize(&d).unwrap();
+			return chain;
+		},
+		Err(e) => {
+			println!("couldn't load blockchain {}", e);
+			Vec::new()
 		}
 	}
 }
@@ -167,17 +206,17 @@ pub fn mine_block<T: Serialize + Copy>(id: u64, timestamp: i64, previous_hash: &
 	}
 }
 
-pub fn print_transaction_block(b: &Block<Vec<rsa::Transaction>>) {
-	println!("BLOCK # {}", b.id);
-	println!("hash: {}", b.hash);
-	println!("nonce: {}", b.nonce);
-	println!("pre: {}", b.previous_hash);
-	println!("at {}", b.timestamp);
+pub fn print_transaction_block(b: &Block) {
+	println!("~~BLOCK # {}~~", b.id);
+	println!("   hash: {}", b.hash);
+	println!("   nonce: {}", b.nonce);
+	println!("   pre: {}", b.previous_hash);
+	println!("   at {}", b.timestamp);
 	for t in &b.data {
 		rsa::print_transaction(&t);
 	}
 }
-pub fn chain_print_transactions(chain: &Chain<Vec<rsa::Transaction>>) {
+pub fn chain_print_transactions(chain: &Chain) {
 	for b in &chain.blocks {
 		print_transaction_block(&b);
 	}

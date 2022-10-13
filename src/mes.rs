@@ -57,7 +57,7 @@ impl Message {
 			v.push(b);
 		}
 		//v.push(self.mes.len() as u8);
-		println!("messages leng: {}", self.mes.len());
+		//println!("messages leng: {}", self.mes.len());
 		for e in &self.user.as_bytes() {
 			v.push(*e);
 		}
@@ -66,6 +66,9 @@ impl Message {
 		}
 		for e in &self.mes {
 			v.push(*e);
+		}
+		if v.len() > 4096 {
+			println!("probly too big of a message here {}", v.len());
 		}
 		v
 		//let bytes: [u8] = v.as_slice();

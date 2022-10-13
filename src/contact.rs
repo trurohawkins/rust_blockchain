@@ -3,15 +3,15 @@ use  crate::{rsa::{self, User}, mes::{Message},block};
 
 pub struct ContactBook {
 	main_user: Option<User>,
-	my_contact: Contact,
+	pub my_contact: Contact,
 	book: [Vec<Contact>; 27],
 	transaction_pool: Vec<rsa::Transaction>
 }
 
 impl ContactBook {
 	pub fn new() -> Self {
-		let mut main_user: Option<User> = None;
-		let mut my_contact: Contact = Default::default();
+		let main_user: Option<User>;// = None;
+		let my_contact: Contact;// = Default::default();
 		match fs::read("user.sav") {
 			Ok(v) => {
 				let u = rsa::bytes_to_user(v);
@@ -29,8 +29,7 @@ impl ContactBook {
 				main_user = Some(User::new(&s));
 				match main_user {
 					Some(ref u) => {
-						u.print();
-						//u.save();
+						u.save();
 						my_contact = Contact::new(&u);
 					},
 					None => todo!(),
@@ -40,11 +39,6 @@ impl ContactBook {
 		}
 		let book: [Vec<Contact>;27] = Default::default();//[0;27];
 		let transaction_pool = Vec::new();
-		/*
-		for _ in 0..27 {
-			book.push(Vec::new());
-		}
-		*/
 		Self { main_user, my_contact, book, transaction_pool }
 	}
 
@@ -55,7 +49,7 @@ impl ContactBook {
 				return false;
 			}
 		}
-		println!("added {}", c.name);
+		println!("NEW CONTACT: {}", c.name);
 		self.book[num].push(c.clone());
 		true
 	}
@@ -72,18 +66,41 @@ impl ContactBook {
 		None
 	}
 
-	pub fn parse_command(&mut self, input: String, ip: Vec<u8>, chain: &mut block::Chain<Vec<rsa::Transaction>>) -> Option<Message> {
-		match self.main_user {
+	pub fn parse_command(&mut self, input: String, ip: Vec<u8>, chain: &mut block::Chain) -> Option<Message> {
+		match self.main_user.clone() {
 			Some(ref user) => {
 				let v: Vec<&str> = input.splitn(3, " ").collect();
 				let letter: char = v[0].chars().next().unwrap() as char;
 
-				if letter == 't' || letter == 'T' {
+				if letter == 'p' || letter == 'P' {
+					if v.len() < 2 {
+						return None;
+					}
+					match v[1].chars().next() {
+						Some(l) => {
+							if l == 'b' || l == 'B' {
+								block::chain_print_transactions(&chain);
+								return None;
+							} else if l == 'c' || l == 'C' {
+								self.print();
+								return None;
+							}
+						},
+						None => {
+							println!("couldn't get char from {}", v[1]);
+						}
+					}
+				} else if letter == 't' || letter == 'T' {
 					if v.len() < 3 {
 						return None;
 					}
 					match v[1].parse::<f64>() {
 						Ok(amount) => {
+							let balance = self.account_balance(chain, self.my_contact.key.clone());
+							if balance < amount {
+								println!("your balance: {} is too low to spend {}", balance, amount);
+								return None;
+							}
 							println!("sending {} to {}", amount, v[2]);
 							let recipient = self.find_contact(v[2].trim_matches('\n').to_string());
 							match recipient {
@@ -144,6 +161,8 @@ impl ContactBook {
 					}
 					println!("mining: got {} transactions", i);
 					if i > 0 {
+						let t = rsa::Transaction::new(Vec::new(), self.my_contact.key.clone(), 1.0);
+						tran_vec.push(t);
 						let latest_block = chain.blocks.last().expect("at least one block");
 						let b = block::Block::new(latest_block.id + 1, latest_block.hash.clone(), tran_vec);
 						let d = bincode::serialize(&b).unwrap();
@@ -157,7 +176,11 @@ impl ContactBook {
 				} else if letter == 'l' || letter == 'L' {
 					let chain_length: u64 = chain.blocks.len().try_into().unwrap();
 					let m: Message = Message::new(4, self.my_contact.clone(), chain_length.to_be_bytes().to_vec(), ip.clone());
+					m.print();
 					return Some(m);
+				} else if letter == 'b' || letter == 'B' {
+					println!("account balance: {}", self.account_balance(chain, self.my_contact.key.clone()));
+					return None;
 				}
 				//let data = parse_command(input, book, user.clone());
 				let m: Message = Message::new(0, self.my_contact.clone(), input.as_bytes().to_vec(), ip.clone());
@@ -168,13 +191,12 @@ impl ContactBook {
 			}
 		}
 	}
-	pub fn parse_message(&mut self, m: Message, ip: Vec<u8>, chain: &mut block::Chain<Vec<rsa::Transaction>>) -> Option<Message> {
-		println!("Parsing {}", m.form);
+	pub fn parse_message(&mut self, m: Message, ip: Vec<u8>, chain: &mut block::Chain) -> Option<Message> {
+		//println!("Parsing {}", m.form);
 		if m.form == 0 {
 			m.read();
 			return None;
 		} else if m.form == 1 {
-			m.print();
 			match bincode::deserialize(&m.mes) {
 				Ok(th) => {
 					//let trans = rsa::verify_transaction(m.user.key.clone(), th);
@@ -198,6 +220,7 @@ impl ContactBook {
 			//contact messgae
 			let c: Contact = bytes_to_contact(m.mes.clone());
 			if self.add_contact(c) {
+				println!("sending my contact");
 				let d: Vec<u8> = self.my_contact.as_bytes();
 				let m: Message = Message::new(2, self.my_contact.clone(), d, ip.clone());
 				return Some(m);
@@ -226,20 +249,22 @@ impl ContactBook {
 				i += 1;
 			}
 			let our_len: u64 = chain.blocks.len().try_into().unwrap();
-			println!("got length: {},  ours: {}",other_len, our_len );
+			println!("NEW CHAIN LENGTH: {},  ours: {}",other_len, our_len );
 			if other_len > our_len {
 				//send chain length
 				let chain_length: u64 = chain.blocks.len().try_into().unwrap();
 				let m: Message = Message::new(4, self.my_contact.clone(), chain_length.to_be_bytes().to_vec(), ip.clone());
+				println!("requesting chain");
 				return Some(m);
 			} else if other_len < our_len {
+				println!("sending our chain");
 				//send our chain
 				let d = bincode::serialize(&chain).unwrap();
 				let m: Message = Message::new(5, self.my_contact.clone(), d, ip.clone());
 				return Some(m);
 			}
 		} else if m.form == 5 {
-			match bincode::deserialize::<block::Chain<Vec<rsa::Transaction>>>(&m.mes) {
+			match bincode::deserialize::<block::Chain>(&m.mes) {
 				Ok(other_chain) => {
 					chain.blocks = chain.choose_chain(chain.blocks.clone(), other_chain.blocks);
 					block::chain_print_transactions(&chain);
@@ -250,15 +275,14 @@ impl ContactBook {
 		None
 	}
 
-	pub fn prune_transactions(&mut self, chain: &mut block::Chain<Vec<rsa::Transaction>>) {
-		let size = self.transaction_pool.len();
+	pub fn prune_transactions(&mut self, chain: &mut block::Chain) {
 		let mut i = 0;// size - 1;
 		'main: while i < self.transaction_pool.len() {
-			println!("checking {} out of {}", i, self.transaction_pool.len());
-			'chain: for b in &chain.blocks {
-				'trans: for t in &b.data {
+			//println!("checking {} out of {}", i, self.transaction_pool.len());
+			for b in &chain.blocks {
+				for t in &b.data {
 					if self.transaction_pool[i] == *t {
-						println!("we have a match, this trans shouldnt exist anywhere else");
+						//println!("we have a match, this trans shouldnt exist anywhere else");
 						self.transaction_pool.remove(i);
 						continue 'main;
 					}
@@ -267,6 +291,30 @@ impl ContactBook {
 			i += 1;
 		}
 	}
+
+	pub fn account_balance(&mut self, chain: &block::Chain, account: Vec<u8>) -> f64 {
+		let mut balance: f64 = 0.0;
+		for b in &chain.blocks {
+			for t in &b.data {
+				if t.sender == account {
+					balance -= t.amount;
+				}
+				if t.recipient == account {
+					balance += t.amount;
+				}
+			}
+		}
+		for t in &self.transaction_pool {
+			if t.sender == account {
+				balance -= t.amount;
+			}
+			if t.recipient == account {
+				balance += t.amount;
+			}
+		}
+		balance
+	}
+
 
 /*
 	pub fn parse_message(&self, m: Message) {
@@ -280,6 +328,7 @@ impl ContactBook {
 	}
 */
 	pub fn print(&self) {
+		println!("----CONTACTS----");
 		for page in &self.book {
 			if page.len() > 0 {
 				for con in page {
@@ -287,6 +336,7 @@ impl ContactBook {
 				}
 			}
 		}
+		println!("----------------");
 	}
 }
 
@@ -303,7 +353,7 @@ fn get_index(name: String) -> usize {
 	if num >= 97 && num <= 122 {
 		num -= 97;
 	} else if num != 26 {
-		println!("{} became {}", name, num);
+		//println!("{} became {}", name, num);
 		num = 26;
 	}
 	num

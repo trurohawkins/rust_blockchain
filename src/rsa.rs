@@ -25,26 +25,21 @@ impl User {
 		println!("Private key: {}", String::from_utf8(self.private.clone()).unwrap());
 		println!("Public key: {}", String::from_utf8(self.public.clone()).unwrap());
 	}
-
-	pub fn as_bytes(&self) -> Vec<u8> {
+	
+	fn as_bytes(&self) -> Vec<u8> {
 		let mut v = Vec::new();
-		let mut i = 0;
 		for b in &self.private {
 			v.push(*b);
-			i += 1;
 		}
-		println!("private key is {} long", i);
 		for b in &self.public {
 			v.push(*b);
-			i += 1;
 		}
-		println!("together:  {} long", i);
 		for b in self.name.as_bytes() {
 			v.push(*b);
 		}
 		v
 	}
-
+	
 	pub fn save(&self) {
 		let b = self.as_bytes();
 		match fs::write("user.sav", b) {
@@ -77,15 +72,15 @@ pub fn bytes_to_user(bytes: Vec<u8>) -> User {
 }
 
 
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub struct Transaction {
 	//sender: (BigUint, BigUint),
 	//recipient: (BigUint, BigUint), 
-	sender: Vec<u8>,//Rsa<Public>,
+	pub sender: Vec<u8>,//Rsa<Public>,
 	//sender: rsa::RsaPublicKey,//Rsa<Public>,
-	recipient: Vec<u8>,//Rsa<Public>,
+	pub recipient: Vec<u8>,//Rsa<Public>,
 	//recipient: rsa::RsaPublicKey,//Rsa<Public>,
-	amount: f64,
+	pub amount: f64,
 	timestamp: i64
 }
 

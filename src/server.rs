@@ -16,7 +16,7 @@ fn handle_sender(mut stream: TcpStream, tx: mpsc::Sender<Message>) -> io::Result
 		let bytes_read = stream.read(&mut buf)?;
 		// sender stream in a mutable variable
 		if bytes_read == 0 {
-			println!("ppopy");
+			println!("lost connection to client");
 			return Ok(());
 		}
 		let m: Message = mes::mes_from_bytes(&buf[..bytes_read]);
