@@ -1,6 +1,7 @@
 use std::io;
-use std::{io::{Read}, time, net::{TcpListener, TcpStream}, thread,
+use std::{io::{Read}, time, net::{SocketAddr, TcpListener, TcpStream}, thread,
 					sync::mpsc};
+use socket2::{Socket, Domain, Type};
 use crate::mes::{self, Message};
 //static mut S_VEC: Vec<TcpStream> = Vec::new();
 
@@ -34,7 +35,7 @@ fn handle_sender(mut stream: TcpStream, tx: mpsc::Sender<Message>) -> io::Result
 		// read, print the message sent
 		//println!("from the sender:{}", String::from_utf8_lossy(&buf));
 		// and you can sleep this connection wit hthe connected sender
-		thread::sleep(time::Duration::from_secs(1));
+		//thread::sleep(time::Duration::from_secs(1));
 	}
 	//success value
 	Ok(())
@@ -43,7 +44,18 @@ fn handle_sender(mut stream: TcpStream, tx: mpsc::Sender<Message>) -> io::Result
 pub fn server(tx: mpsc::Sender<Message>, s_tx: mpsc::Sender<TcpStream>) -> io::Result<()> {
 	//Enable port 7878 binding
 	//let receiver_listener = TcpListener::bind("127.0.0.1:7878").expect("Failed and bind with the sender");
-	match TcpListener::bind("127.0.0.1:7878") {
+	//match TcpListener::bind("127.0.0.1:7878") {
+	/*
+	let socket = Socket::new(Domain::IPV4, Type::STREAM, None)?;
+	//socket.set_only_v6(false)?;
+	let address: SocketAddr = "[::1]:7878".parse().unwrap();
+	socket.set_reuse_address(true);
+	socket.bind(&address.into())?;
+	socket.bind(&address.into())?;
+	socket.listen(128)?;
+	let receiver_listener: TcpListener = socket.into();
+	*/
+	match TcpListener::bind("0.0.0.0:7878") {
 		Ok(receiver_listener) => {
 			//receiver_listener.set_nonblocking(true).expect("Cannot set non-blocking");
 			// Getting a handle of the underlying thread
@@ -85,6 +97,7 @@ pub fn server(tx: mpsc::Sender<Message>, s_tx: mpsc::Sender<TcpStream>) -> io::R
 			println!("couldnt start server -- {}", e);
 		}
 	}
+	
 // success value
 	Ok(())
 }
