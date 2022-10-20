@@ -213,7 +213,8 @@ pub fn print_transaction_block(b: &Block) {
 	println!("   pre: {}", b.previous_hash);
 	println!("   at {}", b.timestamp);
 	for t in &b.data {
-		rsa::print_transaction(&t);
+		//rsa::print_transaction(&t);
+		println!("   {} at {}", &t.amount, &t.timestamp);
 	}
 }
 pub fn chain_print_transactions(chain: &Chain) {

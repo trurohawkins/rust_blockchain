@@ -23,7 +23,8 @@ impl Message {
 		for n in &self.ip {
 			print!("{}",n);
 		}
-		println!("\nmes:");
+		println!("\ntype: {}", self.form);
+		println!("mes:");
 		match std::str::from_utf8(&self.mes) {
 			Ok(s) => {println!("{:#?}",s);},
 			Err(_) => {
@@ -125,9 +126,15 @@ pub fn input(tx: mpsc::Sender<String>) {
 		}	
 	}
 */
-	let mut first_inp = true;
+	let mut first_inp = false;//true;
 	loop {
-		if !first_inp {
+		if first_inp {
+			match tx.send("C".to_string()) {
+				Ok(_) => {},
+				Err(e) => {println!("input broadcast to main thread failed {}", e);}
+			}
+			first_inp = false;
+		} else {
 			//Allow sender t oenter message input
 			let mut input = String::new();
 			//First access the input message and read it
@@ -136,12 +143,6 @@ pub fn input(tx: mpsc::Sender<String>) {
 				Ok(_) => {},
 				Err(e) => {println!("input broadcast to main thread failed {}", e);}
 			}
-		} else {
-			match tx.send("C".to_string()) {
-				Ok(_) => {},
-				Err(e) => {println!("input broadcast to main thread failed {}", e);}
-			}
-			first_inp = false;
 		}
 		//}
 		/*

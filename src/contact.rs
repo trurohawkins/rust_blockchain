@@ -12,6 +12,7 @@ impl ContactBook {
 	pub fn new() -> Self {
 		let main_user: Option<User>;// = None;
 		let my_contact: Contact;// = Default::default();
+		let mut new_contact = true; // until saving contacts is in
 		match fs::read("user.sav") {
 			Ok(v) => {
 				let u = rsa::bytes_to_user(v);
@@ -22,6 +23,7 @@ impl ContactBook {
 			Err(_) => {
 				println!("Hello and Welcome, Please enter a name to continue...");
 				let mut input = String::new();
+				new_contact = true;
 				//First access the input message and read it
 				io::stdin().read_line(&mut input).expect("Failed to read");
 				let s = &input[..input.len()-1];
@@ -39,7 +41,12 @@ impl ContactBook {
 		}
 		let book: [Vec<Contact>;27] = Default::default();//[0;27];
 		let transaction_pool = Vec::new();
-		Self { main_user, my_contact, book, transaction_pool }
+		let mut cb = ContactBook { main_user, my_contact: my_contact.clone(), book, transaction_pool };
+		if new_contact {
+			cb.add_contact(my_contact);
+		}
+		cb
+		//Self { main_user, my_contact, book, transaction_pool }
 	}
 
 	pub fn add_contact(&mut self, c: Contact) -> bool {
@@ -50,6 +57,7 @@ impl ContactBook {
 			}
 		}
 		println!("NEW CONTACT: {}", c.name);
+		c.print();
 		self.book[num].push(c.clone());
 		true
 	}
@@ -71,116 +79,110 @@ impl ContactBook {
 			Some(ref user) => {
 				let v: Vec<&str> = input.splitn(3, " ").collect();
 				let letter: char = v[0].chars().next().unwrap() as char;
-
-				if letter == 'p' || letter == 'P' {
-					if v.len() < 2 {
-						return None;
-					}
-					match v[1].chars().next() {
-						Some(l) => {
-							if l == 'b' || l == 'B' {
-								block::chain_print_transactions(&chain);
-								return None;
-							} else if l == 'c' || l == 'C' {
-								self.print();
+				match v[0].chars().next() {
+					Some(letter) => {
+						if letter == 'p' || letter == 'P' {
+							if v.len() < 2 {
 								return None;
 							}
-						},
-						None => {
-							println!("couldn't get char from {}", v[1]);
-						}
-					}
-				} else if letter == 't' || letter == 'T' {
-					if v.len() < 3 {
-						return None;
-					}
-					match v[1].parse::<f64>() {
-						Ok(amount) => {
-							let balance = self.account_balance(chain, self.my_contact.key.clone());
-							if balance < amount {
-								println!("your balance: {} is too low to spend {}", balance, amount);
-								return None;
-							}
-							println!("sending {} to {}", amount, v[2]);
-							let recipient = self.find_contact(v[2].trim_matches('\n').to_string());
-							match recipient {
-								Some(r) => {
-									//let trans = rsa::Transaction::new(user.public.clone(), r.key, amount);
-									let hash = rsa::sign_transaction(user.clone(), r.key, amount);
-									let d: Vec<u8> = bincode::serialize(&hash).unwrap();
-									/*
-									rsa::print_transaction(trans);
-									*/
-									let th: rsa::TransHash = bincode::deserialize(&d).unwrap();
-									match rsa::verify_transaction(user.public.clone(), th) {
-										Some(trans) => {
-											self.transaction_pool.push(trans);
-										},
-										None => {println!("unable to add transaction D:");}
+							match v[1].chars().next() {
+								Some(l) => {
+									if l == 'b' || l == 'B' {
+										block::chain_print_transactions(&chain);
+										return None;
+									} else if l == 'c' || l == 'C' {
+										self.print();
+										return None;
 									}
-									let m: Message = Message::new(1, self.my_contact.clone(), d, ip.clone());
-									//m.parse();
-									return Some(m);
 								},
 								None => {
-									println!("couldn't find {} in contacts", v[2].to_string());
-									return None
+									println!("couldn't get char from {}", v[1]);
 								}
 							}
-						},
-						Err(e) => {
-							println!("couldn't get float from command {}: {}", input, e);
+						} else if letter == 't' || letter == 'T' {
+							if v.len() < 3 {
+								return None;
+							}
+							match v[1].parse::<f64>() {
+								Ok(amount) => {
+									let balance = self.account_balance(chain, self.my_contact.key.clone());
+									if balance < amount {
+										println!("your balance: {} is too low to spend {}", balance, amount);
+										return None;
+									}
+									println!("sending {} to {}", amount, v[2]);
+									let recipient = self.find_contact(v[2].trim_matches('\n').to_string());
+									match recipient {
+										Some(r) => {
+											//let trans = rsa::Transaction::new(user.public.clone(), r.key, amount);
+											let hash = rsa::sign_transaction(user.clone(), r.key, amount);
+											let d: Vec<u8> = bincode::serialize(&hash).unwrap();
+											/*
+											rsa::print_transaction(trans);
+											*/
+											let th: rsa::TransHash = bincode::deserialize(&d).unwrap();
+											match rsa::verify_transaction(user.public.clone(), th) {
+												Some(trans) => {
+													self.transaction_pool.push(trans);
+												},
+												None => {println!("unable to add transaction D:");}
+											}
+											let m: Message = Message::new(1, self.my_contact.clone(), d, ip.clone());
+											//m.parse();
+											return Some(m);
+										},
+										None => {
+											println!("couldn't find {} in contacts", v[2].to_string());
+											return None
+										}
+									}
+								},
+								Err(e) => {
+									println!("couldn't get float from command {}: {}", input, e);
+									return None;
+								}
+							}
+						} else if letter == 'c' || letter == 'C' {
+							let d: Vec<u8> = self.my_contact.as_bytes();
+							let m: Message = Message::new(2, self.my_contact.clone(), d, ip.clone());
+							return Some(m);
+						} else if letter == 'm' || letter == 'M' {
+							let mut i = 0;
+							let mut tran_vec: Vec<rsa::Transaction> = Vec::new();
+							while i < 3 {
+								if self.transaction_pool.len() > 0 {
+									let t = self.transaction_pool.remove(0);
+									tran_vec.push(t);
+								} else {
+									break;
+								}
+								i += 1;
+							}
+							println!("mining: got {} transactions", i);
+							if i > 0 {
+								let t = rsa::Transaction::new(Vec::new(), self.my_contact.key.clone(), 1.0);
+								tran_vec.push(t);
+								let latest_block = chain.blocks.last().expect("at least one block");
+								let b = block::Block::new(latest_block.id + 1, latest_block.hash.clone(), tran_vec);
+								let d = bincode::serialize(&b).unwrap();
+								chain.try_add_block(b.clone());
+								block::print_transaction_block(&b);
+								let m: Message = Message::new(3, self.my_contact.clone(), d,ip.clone());
+								return Some(m);
+							} else {
+								return None;
+							}
+						} else if letter == 'l' || letter == 'L' {
+							let chain_length: u64 = chain.blocks.len().try_into().unwrap();
+							let m: Message = Message::new(4, self.my_contact.clone(), chain_length.to_be_bytes().to_vec(), ip.clone());
+							//m.print();
+							return Some(m);
+						} else if letter == 'b' || letter == 'B' {
+							println!("account balance: {}", self.account_balance(chain, self.my_contact.key.clone()));
 							return None;
 						}
-					}
-				} else if letter == 'c' || letter == 'C' {
-					let d: Vec<u8> = self.my_contact.as_bytes();
-					let m: Message = Message::new(2, self.my_contact.clone(), d, ip.clone());
-					return Some(m);
-				} else if letter == 'm' || letter == 'M' {
-					let mut i = 0;
-					let mut tran_vec: Vec<rsa::Transaction> = Vec::new();
-					while i < 3 {
-						if self.transaction_pool.len() > 0 {
-							let t = self.transaction_pool.remove(0);
-							tran_vec.push(t);
-						} else {
-							break;
-						}
-						/*
-						match t {
-							Some(trans) => {
-								tran_vec.push(trans);
-							},
-							None => {
-								break;
-							}
-						}
-							*/
-						i += 1;
-					}
-					println!("mining: got {} transactions", i);
-					if i > 0 {
-						let t = rsa::Transaction::new(Vec::new(), self.my_contact.key.clone(), 1.0);
-						tran_vec.push(t);
-						let latest_block = chain.blocks.last().expect("at least one block");
-						let b = block::Block::new(latest_block.id + 1, latest_block.hash.clone(), tran_vec);
-						let d = bincode::serialize(&b).unwrap();
-						chain.try_add_block(b.clone());
-						block::print_transaction_block(&b);
-						let m: Message = Message::new(3, self.my_contact.clone(), d,ip.clone());
-						return Some(m);
-					} else {
-						return None;
-					}
-				} else if letter == 'l' || letter == 'L' {
-					let chain_length: u64 = chain.blocks.len().try_into().unwrap();
-					let m: Message = Message::new(4, self.my_contact.clone(), chain_length.to_be_bytes().to_vec(), ip.clone());
-					m.print();
-					return Some(m);
-				} else if letter == 'b' || letter == 'B' {
-					println!("account balance: {}", self.account_balance(chain, self.my_contact.key.clone()));
-					return None;
+					},
+					None => { return None }
 				}
 				//let data = parse_command(input, book, user.clone());
 				let m: Message = Message::new(0, self.my_contact.clone(), input.as_bytes().to_vec(), ip.clone());
@@ -220,7 +222,6 @@ impl ContactBook {
 			//contact messgae
 			let c: Contact = bytes_to_contact(m.mes.clone());
 			if self.add_contact(c) {
-				println!("sending my contact");
 				let d: Vec<u8> = self.my_contact.as_bytes();
 				let m: Message = Message::new(2, self.my_contact.clone(), d, ip.clone());
 				return Some(m);
@@ -271,6 +272,9 @@ impl ContactBook {
 				},
 				Err(e) => {println!("couldn't unpack remote blockchain {}", e);}
 			}
+		} else if m.form == 6 {
+			//receipt
+			return None;
 		}
 		None
 	}
@@ -386,7 +390,12 @@ impl Contact {
 
 	pub fn print(&self) {
 		println!("name: {}--", self.name);
-		println!("key: {}--", String::from_utf8(self.key.clone()).unwrap());
+		match String::from_utf8(self.key.clone()) {
+			Ok(s) => {
+				println!("key: {}--", s);
+			},
+			Err(_) => {}
+		}
 	}
 
 	pub fn save(&self) {
@@ -415,8 +424,11 @@ pub fn bytes_to_contact(c: Vec<u8>) -> Contact {
 	}
 
 	let name = match std::str::from_utf8(&s) {
-		Ok(v) => v,
-		Err(e) => panic!("bad contact buff {}", e),
+		Ok(v) => v, 
+		Err(e) => {
+			println!("bad contact buff {}", e);
+			return Contact{key, name: "no name".to_string()}
+		}
 	};
 	
 	Contact {key, name: name.to_string()}	

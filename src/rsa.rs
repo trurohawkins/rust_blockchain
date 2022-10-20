@@ -81,7 +81,7 @@ pub struct Transaction {
 	pub recipient: Vec<u8>,//Rsa<Public>,
 	//recipient: rsa::RsaPublicKey,//Rsa<Public>,
 	pub amount: f64,
-	timestamp: i64
+	pub timestamp: i64
 }
 
 impl Transaction {

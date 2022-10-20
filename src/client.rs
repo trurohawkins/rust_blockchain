@@ -1,15 +1,18 @@
-use std::{net::TcpStream, io::{self, prelude::*,BufReader}, sync::mpsc};
-use crate::{mes::{self, Message}};
+use std::{net::TcpStream, io::{self, prelude::*,BufReader}, sync::mpsc,
+	sync::{Arc, Mutex}};
+use crate::{mes::{self, Message}, contact::Contact, rsa};
 
 pub struct ClientConnection {
 	pub stream: TcpStream,
-	pub user: Vec<u8>
+	pub user: Vec<u8>,
+	pub i: u8,
+	pub receipt: bool
 }
 
 impl ClientConnection {
 	pub fn new(stream: TcpStream) -> Self {
 		let user: Vec<u8> = Vec::new();
-		Self {stream, user}
+		Self {stream, user, i: 0, receipt: true}
 	}
 /*
 	pub fn add_user(&mut self, u: Vec<u8>) {
@@ -28,7 +31,7 @@ impl ClientConnection {
 */
 }
 
-pub fn client(stream: TcpStream, c_tx: mpsc::Sender<Message>) -> io::Result<( )> {
+pub fn client(mut stream: TcpStream, c_tx: mpsc::Sender<Message>) -> io::Result<( )> {
 	//connect
 	//Struct used to start requests to the server
 	// Check TcpStream Connection to the server
@@ -36,7 +39,10 @@ pub fn client(stream: TcpStream, c_tx: mpsc::Sender<Message>) -> io::Result<( )>
 	//let mut stream = TcpStream::connect(ip).expect("couldnt connect to server");
 	
 	//stream.set_nonblocking(true).expect("set_nonblocking call failed");
-	//let mut buf = vec![];
+	//let mut buf = vec![];A
+	let poo_user = rsa::User::new("Papa");
+	let rec_contact: Contact = Contact::new(&poo_user);//{key: Vec::new(), name: "receipt".to_string() };
+	let ip = vec!(0,0,0,0,0,0,0,0,0);
 	loop {
 	//for _ in 0..1000 {
 		//Write the message so that the receiver can access it
@@ -54,9 +60,12 @@ pub fn client(stream: TcpStream, c_tx: mpsc::Sender<Message>) -> io::Result<( )>
 					println!("ohnoohno zerooo bytes, server is probably gone, I will disconnect now");
 					break;
 				}
+				println!("sending receipt of {} in length", bytes_read);
+				let receipt: Message = Message::new(6, rec_contact.clone(), bytes_read.to_be_bytes().to_vec(), ip.clone());
+				let _ = stream.write(&receipt.as_bytes()[..]);
 
 				let m: Message = mes::mes_from_bytes(&buf);
-				match c_tx.send(m) {
+				match c_tx.send(m.clone()) {
 					Ok(_) => {},
 					Err(e) => {panic!("error sending broadcast from client thread {}", e);}
 				}
