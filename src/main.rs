@@ -134,7 +134,6 @@ fn main() {//  -> io::Result<()> {
 						let cc = c.lock().unwrap();
 						println!("{:#?} currently at {}", cc.user, cc.i);
 					}
-
 				} else {
 					let m = c_book.parse_command(inp, my_ip.clone(), &mut blockchain);
 					match m {
@@ -159,6 +158,9 @@ fn main() {//  -> io::Result<()> {
 			Ok(m) => {
 				println!("got something from a client");
 				to_clients.push(m.clone());
+				if client_started {
+					to_server.push(m.clone());
+				}
 				let mut reply = c_book.parse_message(m, my_ip.clone(), &mut blockchain);
 				if let Some(ref mut r) = reply {
 					if client_started {
@@ -177,9 +179,12 @@ fn main() {//  -> io::Result<()> {
 		//local client received from remote server
 		match client_rx.try_recv() {
 			Ok(m) => {
-				//to_server.push(m.clone());
+				if server_started {
+					to_clients.push(m.clone());
+				}
 				let mut reply = c_book.parse_message(m, my_ip.clone(), &mut blockchain);
 				if let Some(ref mut r) = reply {
+					to_server.push(r.clone());
 					if server_started {
 						to_clients.push(r.clone());
 					}
